@@ -5,43 +5,62 @@
 #include <fstream>
 #include "Scene.hpp"
 #include "Renderer.hpp"
+#include "D:\tools\mingw64\lib\gcc\x86_64-w64-mingw32\8.1.0\include\omp.h"
+#include <thread>
+#include <mutex>
 
 
 inline float deg2rad(const float& deg) { return deg * M_PI / 180.0; }
-
-const float EPSILON = 0.00001;
+omp_lock_t lock1;
+int prog = 0;
+const float EPSILON = 0.001;
 
 // The main render function. This where we iterate over all pixels in the image,
 // generate primary rays and cast these rays into the scene. The content of the
 // framebuffer is saved to a file.
+void para(Vector3f eye_pos, std::vector<Vector3f> &framebuffer, const Scene& scene, int spp, float imageAspectRatio, float scale, int start, int end){
+    int width, height;
+    width = height = sqrt(spp);
+    float step = 1.0f / width;
+    for (uint32_t j = start; j < end; ++j) {
+        for (uint32_t i = 0; i < scene.width; ++i) {
+            // generate primary ray direction   
+            for (int k = 0; k < spp; k++){
+                float x = (2 * (i + step / 2 + step * (k % width)) / (float)scene.width - 1) *
+                        imageAspectRatio * scale;
+                float y = (1 - 2 * (j + step / 2 + step * (k / height)) / (float)scene.height) * scale;
+                Vector3f dir = normalize(Vector3f(-x, y, 1));
+                framebuffer[j * scene.width + i] += scene.castRay(Ray(eye_pos, dir), 0) / spp;  
+            }
+        }
+        omp_set_lock(&lock1);
+        prog++;
+        UpdateProgress(prog / (float)scene.height);
+        omp_unset_lock(&lock1);
+
+    }
+}
 void Renderer::Render(const Scene& scene)
 {
+    omp_init_lock(&lock1);
     std::vector<Vector3f> framebuffer(scene.width * scene.height);
 
     float scale = tan(deg2rad(scene.fov * 0.5));
     float imageAspectRatio = scene.width / (float)scene.height;
     Vector3f eye_pos(278, 273, -800);
     int m = 0;
-
+    int thread_num = 32;
+    int thread_step = scene.height / thread_num;
+    std::vector<std::thread> rays;
     // change the spp value to change sample ammount
-    int spp = 16;
+    int spp = 256;
     std::cout << "SPP: " << spp << "\n";
-    for (uint32_t j = 0; j < scene.height; ++j) {
-        for (uint32_t i = 0; i < scene.width; ++i) {
-            // generate primary ray direction
-            float x = (2 * (i + 0.5) / (float)scene.width - 1) *
-                      imageAspectRatio * scale;
-            float y = (1 - 2 * (j + 0.5) / (float)scene.height) * scale;
-
-            Vector3f dir = normalize(Vector3f(-x, y, 1));
-            for (int k = 0; k < spp; k++){
-                framebuffer[m] += scene.castRay(Ray(eye_pos, dir), 0) / spp;  
-            }
-            m++;
-        }
-        UpdateProgress(j / (float)scene.height);
-    }
+    #pragma omp parallel for
+        for (int i = 0; i < thread_num; i++) 
+            para(eye_pos, std::ref(framebuffer), std::ref(scene), spp, 
+                    imageAspectRatio, scale, i * thread_step, (i + 1) * thread_step);
     UpdateProgress(1.f);
+
 
     // save framebuffer to file
     FILE* fp = fopen("binary.ppm", "wb");
@@ -55,3 +74,5 @@ void Renderer::Render(const Scene& scene)
     }
     fclose(fp);    
 }
+
+

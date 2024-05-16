@@ -15,6 +15,7 @@
                 "-I", "D:/tools/opencv/opencv/build/x64/mingw/install/include/",
                 "-I", "D:/tools/opencv/opencv/build/x64/mingw/install/include/opencv2/",
                 "-L", "D:/tools/opencv/opencv/build/x64/mingw/install/x64/mingw/bin/lib*",
+                "-fopenmp",
                 "-std=c++17"
             ],
             "options": {
